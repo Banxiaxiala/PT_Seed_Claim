@@ -2,9 +2,9 @@
 // @name            PT种子认领
 // @name:zh-CN      PT种子认领
 // @namespace       https://github.com/Banxiaxiala/PT_Seed_Claim
-// @version         0.1.0
-// @description     在用户详情页一键认领全部当前做种种子（支持分页翻页、折叠列表展开，自动认领所有做种种子）
-// @description:en  One-click claim all seeding torrents on user details page (supports pagination & collapsed lists)
+// @version         0.2.0
+// @description     在用户详情页一键认领全部当前做种种子（自动展开折叠列表、自动翻页、可视化进度、已认领去重跳过）
+// @description:en  One-click claim all seeding torrents on user details page (auto-expand list, progress UI, skip already-claimed)
 // @author          Banxiaxiala
 // @match           https://kamept.com/userdetails.php?id=*
 // @match           https://www.nicept.net/userdetails.php?id=*
@@ -31,9 +31,12 @@
   'use strict';
 
   const SITE = location.origin;
+  const HOST = location.hostname;
   const CLAIM_INTERVAL = 500;              // 每个种子请求间隔(ms)，防止短时间多次点击被处理
   const FETCH_INTERVAL = 300;              // 抓取分页间隔(ms)
+  const EXPAND_WAIT = 2000;                // 展开折叠列表后等待渲染(ms)
   const USERID = (location.search.match(/[?&]id=(\d+)/) || [])[1] || '';
+  const STORE_KEY = 'PT_CLAIMED_' + HOST;  // 已认领记录存储键(按站点区分)
 
   // 站点配置：按 hostname 识别，不同站点的"当前做种"行文字、列表加载方式不同
   const SITE_CONFIG = {
@@ -41,7 +44,67 @@
     'www.nicept.net': { row: /目前做種/, paginated: false },
     'ptfans.cc': { row: /当前做种/, paginated: false }
   };
-  const cfg = SITE_CONFIG[location.hostname] || null;
+  const cfg = SITE_CONFIG[HOST] || null;
+
+  // ---------- 已认领去重存储(localStorage) ----------
+  function loadClaimedSet() {
+    try {
+      const raw = localStorage.getItem(STORE_KEY);
+      const arr = raw ? JSON.parse(raw) : [];
+      return new Set(Array.isArray(arr) ? arr : []);
+    } catch (e) {
+      return new Set();
+    }
+  }
+  function saveClaimedSet(set) {
+    try {
+      localStorage.setItem(STORE_KEY, JSON.stringify(Array.from(set)));
+    } catch (e) { /* 忽略存储失败 */ }
+  }
+
+  // ---------- 可视化进度面板 ----------
+  let progressUI = null;
+  function showProgressUI() {
+    if (progressUI && document.body.contains(progressUI)) return;
+    const dom = document.createElement('div');
+    dom.id = 'kesaClaimProgress';
+    dom.innerHTML =
+      '<div style="position:fixed;right:20px;bottom:20px;z-index:99999;width:260px;padding:12px;' +
+      'background:#fff;border:2px solid #c00;border-radius:8px;box-shadow:0 2px 12px rgba(0,0,0,.3);' +
+      'font:13px/1.6 sans-serif;color:#333">' +
+      '  <div style="font-weight:bold;color:#c00;margin-bottom:6px">PT种子认领进行中…</div>' +
+      '  <div style="margin-bottom:6px" id="kesaClaimProgressText">准备中…</div>' +
+      '  <div style="background:#eee;border-radius:4px;overflow:hidden;height:14px">' +
+      '    <div id="kesaClaimProgressBar" style="height:14px;width:0%;background:#c00;transition:width .2s"></div>' +
+      '  </div>' +
+      '  <div style="margin-top:6px;color:#666">' +
+      '    <span id="kesaClaimProgressStats">0/0</span>' +
+      '    <span style="float:right">成功 <span id="kesaClaimProgressOK">0</span> · 失败 <span id="kesaClaimProgressFail">0</span></span>' +
+      '  </div>' +
+      '</div>';
+    document.body.appendChild(dom);
+    progressUI = dom;
+  }
+  function updateProgressUI(index, total, ok, fail, text) {
+    showProgressUI();
+    const pct = total > 0 ? Math.round((index / total) * 100) : 0;
+    const bar = progressUI.querySelector('#kesaClaimProgressBar');
+    const txt = progressUI.querySelector('#kesaClaimProgressText');
+    const stats = progressUI.querySelector('#kesaClaimProgressStats');
+    const okEl = progressUI.querySelector('#kesaClaimProgressOK');
+    const failEl = progressUI.querySelector('#kesaClaimProgressFail');
+    if (bar) bar.style.width = pct + '%';
+    if (txt) txt.textContent = text || '';
+    if (stats) stats.textContent = index + '/' + total;
+    if (okEl) okEl.textContent = ok;
+    if (failEl) failEl.textContent = fail;
+  }
+  function closeProgressUI() {
+    if (progressUI && progressUI.parentNode) {
+      progressUI.parentNode.removeChild(progressUI);
+    }
+    progressUI = null;
+  }
 
   function sleep(ms) {
     return new Promise((resolve) => setTimeout(resolve, ms));
@@ -117,6 +180,28 @@
   }
 
   /**
+   * 展开折叠的做种列表(仅折叠站)。返回该块的 DOM id；已内联或无折叠块返回 null。
+   */
+  function expandCollapsedList(sectionCell) {
+    const block = sectionCell.querySelector('div[id]');
+    const blockId = block && block.id;
+    if (!blockId) return null;
+    try {
+      if (typeof getusertorrentlistajax === 'function') {
+        getusertorrentlistajax(USERID, 'seeding', blockId);
+      }
+      // 若元素 display:none，尝试显示(部分站点加载后仍需展示)
+      const el = document.getElementById(blockId);
+      if (el) {
+        el.style.display = '';
+      }
+    } catch (e) {
+      console.error('展开做种列表失败', e);
+    }
+    return blockId;
+  }
+
+  /**
    * 收集所有待认领种子的 id
    */
   async function collectIds() {
@@ -139,23 +224,10 @@
         await sleep(FETCH_INTERVAL);
       }
     } else {
-      // NicePT/PTFans：列表折叠在 #ka1，先尝试触发加载，再抓取(无分页)
-      const block = sectionCell.querySelector('div[id]');
-      const blockId = block && block.id;
+      // NicePT/PTFans：列表折叠在 #ka1，自动展开后从 DOM 提取(无分页)
+      const blockId = expandCollapsedList(sectionCell);
       if (blockId) {
-        try {
-          if (typeof getusertorrentlistajax === 'function') {
-            getusertorrentlistajax(USERID, 'seeding', blockId);
-          } else {
-            // 无全局函数时直接 fetch
-            const html = await (await fetch(SITE + '/getusertorrentlistajax.php?userid=' + USERID + '&type=seeding')).text();
-            extractClaimableIds(html).forEach((id) => ids.add(id));
-          }
-        } catch (e) {
-          console.error('加载做种列表失败', e);
-        }
-        // 等待列表渲染后从 DOM 提取
-        await sleep(2000);
+        await sleep(EXPAND_WAIT);
         const loadedBlock = document.getElementById(blockId);
         if (loadedBlock) {
           extractClaimableIds(loadedBlock.outerHTML).forEach((id) => ids.add(id));
@@ -173,63 +245,74 @@
    */
   async function claimAll() {
     if (!cfg) {
-      alert('未适配当前站点：' + location.hostname);
+      alert('未适配当前站点：' + HOST);
       return;
     }
     if (!getSectionCell()) {
-      alert('未找到"' + (cfg.row.source || '当前做种') + '"区块，请确认在用户详情页打开当前做种列表');
+      alert('未找到"当前做种"区块，请确认在用户详情页打开当前做种列表');
       return;
     }
 
+    showProgressUI();
+    updateProgressUI(0, 1, 0, 0, '正在收集种子…');
     const ids = await collectIds();
-    const list = Array.from(ids);
-    if (list.length === 0) {
-      alert('未检测到可认领的做种种子（可能已全部认领）');
+    const claimedSet = loadClaimedSet();
+
+    // 过滤掉已认领过的种子
+    const todo = Array.from(ids).filter((id) => !claimedSet.has(id));
+    const skipped = ids.size - todo.length;
+
+    closeProgressUI();
+    if (todo.length === 0) {
+      alert('未检测到待认领的做种种子' + (skipped > 0 ? '（已认领' + skipped + '个，已跳过）' : '（可能已全部认领）'));
       return;
     }
 
     const confirmMsg =
-      '共发现 ' + list.length + ' 个待认领种子，确认全部认领？\n\n' +
-      '严正警告：\n请勿短时间内多次点击！\n每个种子间隔 ' + CLAIM_INTERVAL + 'ms，种子越多耗时越久，请耐心等待弹窗结果。';
+      '共发现 ' + ids.size + ' 个可认领种子，其中 ' + skipped + ' 个已认领(将跳过)，本次将认领 ' + todo.length + ' 个。\n\n' +
+      '严正警告：\n请勿短时间内多次点击！\n每个种子间隔 ' + CLAIM_INTERVAL + 'ms，种子越多耗时越久，请耐心等待。';
     if (!confirm(confirmMsg)) return;
 
+    showProgressUI();
     let success = 0;
     let fail = 0;
-    const btn = document.getElementById('kesaClaimAll');
-    for (let i = 0; i < list.length; i++) {
-      if (btn) {
-        btn.textContent = '认领中 ' + (i + 1) + '/' + list.length + '（成功' + success + '）';
-        btn.disabled = true;
-      }
-      const res = await claimTorrent(list[i]);
+    for (let i = 0; i < todo.length; i++) {
+      const id = todo[i];
+      updateProgressUI(i + 1, todo.length, success, fail, '正在认领第 ' + (i + 1) + '/' + todo.length + ' 个…');
+      const res = await claimTorrent(id);
       if (res.ok) {
         success++;
+        claimedSet.add(id);               // 认领成功后记录，下次跳过
       } else {
         fail++;
       }
       await sleep(CLAIM_INTERVAL);
     }
+    saveClaimedSet(claimedSet);
+    closeProgressUI();
 
-    if (btn) {
-      btn.textContent = '一键认领';
-      btn.disabled = false;
-    }
-    alert('共 ' + list.length + ' 个种子，成功认领 ' + success + ' 个，失败 ' + fail + ' 个。');
+    alert('本次待认领 ' + todo.length + ' 个，成功 ' + success + ' 个，失败 ' + fail + ' 个' + (skipped > 0 ? '，已跳过已认领 ' + skipped + ' 个。' : '。'));
   }
 
   /**
-   * 注入"一键认领"按钮到"当前做种"行
+   * 注入"一键认领"按钮到"当前做种"行，并自动展开折叠列表
    */
   function injectButton() {
     if (!cfg) return;
     const sectionCell = getSectionCell();
-    if (!sectionCell || sectionCell.querySelector('#kesaClaimAll')) return;
+    if (!sectionCell) return;
 
+    // 自动展开折叠列表(不依赖用户手动点"显示/隐藏")
+    if (!cfg.paginated) {
+      expandCollapsedList(sectionCell);
+    }
+
+    if (sectionCell.querySelector('#kesaClaimAll')) return;
     const dom = document.createElement('div');
     dom.innerHTML =
       '<a id="kesaClaimAll" href="javascript:void(0);" ' +
       'style="margin-left:10px;font-weight:bold;color:red;cursor:pointer" ' +
-      'title="认领全部当前做种（自动翻遍所有分页/折叠列表，运行中无法停止，强制停止可关闭页面）">一键认领</a>';
+      'title="认领全部当前做种（自动展开列表/翻页，已认领自动跳过，运行中无法停止）">一键认领</a>';
     const a = dom.firstChild;
     a.addEventListener('click', claimAll);
     sectionCell.prepend(dom);
