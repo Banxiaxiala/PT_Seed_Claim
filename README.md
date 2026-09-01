@@ -21,9 +21,12 @@
 
 ## 自动更新
 
-脚本通过 jsDelivr CDN 托管更新源，油猴会在访问匹配站点页面时自动检查并升级（需脚本管理器开启自动更新）。
+脚本已发布到 GreasyFork（脚本 ID 593865），并通过 GitHub Webhook 与仓库 `Banxiaxiala/PT_Seed_Claim` 同步：**push 到仓库后自动同步到 GreasyFork**。
 
-- 更新源：`https://cdn.jsdelivr.net/gh/Banxiaxiala/PT_Seed_Claim@main/pt-seed-claim.user.js`
+- GreasyFork 安装页：<https://greasyfork.org/zh-CN/scripts/593865>
+- 更新源（jsDelivr CDN 兜底）：`https://cdn.jsdelivr.net/gh/Banxiaxiala/PT_Seed_Claim@main/pt-seed-claim.user.js`
+
+油猴会在访问匹配站点页面时自动检查并升级（需脚本管理器开启自动更新）。
 
 ## 使用方法
 
