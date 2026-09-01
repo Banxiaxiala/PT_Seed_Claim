@@ -2,7 +2,7 @@
 // @name            PT种子认领
 // @name:zh-CN      PT种子认领
 // @namespace       https://github.com/Banxiaxiala/PT_Seed_Claim
-// @version         0.2.0
+// @version         0.3.0
 // @description     在用户详情页一键认领全部当前做种种子（自动展开折叠列表、自动翻页、可视化进度、已认领去重跳过）
 // @description:en  One-click claim all seeding torrents on user details page (auto-expand list, progress UI, skip already-claimed)
 // @author          Banxiaxiala
@@ -12,6 +12,8 @@
 // @grant           unsafeWindow
 // @run-at          document-end
 // @license         MIT
+// @updateURL       https://cdn.jsdelivr.net/gh/Banxiaxiala/PT_Seed_Claim@main/pt-seed-claim.user.js
+// @downloadURL     https://cdn.jsdelivr.net/gh/Banxiaxiala/PT_Seed_Claim@main/pt-seed-claim.user.js
 // ==/UserScript==
 
 /**

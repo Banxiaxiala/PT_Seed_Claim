@@ -16,8 +16,14 @@
 ## 安装
 
 1. 安装油猴（Tampermonkey）或同类脚本管理器
-2. 打开 [PT种子认领.user.js](./PT种子认领.user.js)
+2. 打开 [pt-seed-claim.user.js](./pt-seed-claim.user.js)
 3. 安装脚本
+
+## 自动更新
+
+脚本通过 jsDelivr CDN 托管更新源，油猴会在访问匹配站点页面时自动检查并升级（需脚本管理器开启自动更新）。
+
+- 更新源：`https://cdn.jsdelivr.net/gh/Banxiaxiala/PT_Seed_Claim@main/pt-seed-claim.user.js`
 
 ## 使用方法
 
@@ -56,5 +62,5 @@
 本脚本为单个 `.user.js`，无需构建，语法校验：
 
 ```bash
-node --check PT种子认领.user.js
+node --check pt-seed-claim.user.js
 ```
