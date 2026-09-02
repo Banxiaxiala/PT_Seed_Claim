@@ -24,9 +24,9 @@
 脚本已发布到 GreasyFork（脚本 ID 593865），并通过 GitHub Webhook 与仓库 `Banxiaxiala/PT_Seed_Claim` 同步：**push 到仓库后自动同步到 GreasyFork**。
 
 - GreasyFork 安装页：<https://greasyfork.org/zh-CN/scripts/593865>
-- 更新源（jsDelivr CDN 兜底）：`https://cdn.jsdelivr.net/gh/Banxiaxiala/PT_Seed_Claim@main/pt-seed-claim.user.js`
+- 更新源（GreasyFork）：`https://update.greasyfork.org/scripts/593865/pt种子认领.user.js`
 
-油猴会在访问匹配站点页面时自动检查并升级（需脚本管理器开启自动更新）。
+油猴会在访问匹配站点页面时自动检查并升级（需脚本管理器开启自动更新）。注意：已装旧版（jsDelivr 更新源）需手动重装一次 0.3.1 以切换到 GreasyFork 更新源。
 
 ## 使用方法
 
